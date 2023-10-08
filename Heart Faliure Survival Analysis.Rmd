@@ -1,0 +1,461 @@
+---
+title: \vspace{3cm} \begin{huge} \bf HEART FAILURE DATA ANALYSIS\end{huge} \vspace{4cm}
+author: |
+    | \bf Akhil A. Naik
+# abstract: |
+#     What works for the abstract.
+# 
+#     Works for the title, too!
+header-includes:
+#    - \usepackage{floatrow}
+#    - \floatsetup[figure]{capposition=top}
+     - \usepackage{caption}
+     - \captionsetup[figure]{font=normalsize}
+     - \usepackage{biblatex}
+# https://en.wikibooks.org/wiki/LaTeX/Fonts#Built-in_sizes
+output:
+  #html_document: default
+  #bookdown::pdf_book: 
+    #toc_depth: 2
+  #bookdown::pdf_document2: default
+  pdf_document:
+    #dev: png
+    number_sections: true
+    toc_depth: 3
+    fig_caption: yes
+    extra_dependencies: ["float"]
+bibliography: ref1.bib
+link-citations: yes
+#knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dev = "png", dpi=300,fig.pos = "H", out.extra = "")
+# knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+# knitr::opts_chunk$set()
+
+# \newpage
+# \listoffigures
+# \listoftables
+```
+```{r echo=FALSE, results='hide', warning=FALSE, include = FALSE}
+library(lemon) # for printing table
+# render=lemon_print
+knit_print.data.frame <- lemon_print
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(GGally)
+library(reticulate) #enables to run python code
+# Installing python packages in r console
+# py_install("pandas")
+library(pastecs) # for getting summary statistics
+require(gridExtra) # for plotting
+
+library(survival)
+library(lubridate)
+library(ggsurvfit)
+library(gtsummary)
+library(tidycmprsk)
+#library(condsurv)
+
+# Print tabular data
+tprint = function(x,cap=""){
+  knitr::kable(x, align = "c", caption = cap, digits=4)
+}
+```
+\newpage
+\large
+\tableofcontents
+\newpage
+
+# Introduction
+Globally every year cardiovascular diseases are responsible for killing over 17 million people. When the heart is unable to pump enough blood to meet the needs of the body, heart failures occur. The modern technology has enabled hospitals to record medical data of patients to quantify symptoms, clinical test values, body features etc. and present it to analysts and scientists for analysing patterns and correlations which would otherwise be undetectable by doctors. Through analysing medical records for these features, survival of a patient predicted or effect of a disease on a patient can be studied among many other uses. Due to the stressful modern life and less health consciousness among people along with many such reasons, heart failures have been on the rise. To prepare for the adverse affects and knowing how patients can prolong their lives has been the hour of need among the scientists. 
+
+Knowing what can effect the survival of a patient who has been diagnosed with heart failure, can impact the survival/life of a patient significantly, allowing them to prepare themselves to avoid things which can have adverse effect on their health and allowing them to live longer life which otherwise would not be possible. With motivation of studying features that can affect survival of a patient who has been diagnosed with heart failure, the objective is to analyse heart failure clinical records data set present in the UCI Machine Repository [@42] which was donated in 2020. Finding the significant features and performing survival analysis using relevant techniques is the key task ahead.
+
+# Exploratory Data Analysis
+The data set contains the medical records of 299 patients (observations) who had heart failure, collected during their follow-up period, where each patient profile has 13 clinical features/attributes [@42].
+
+## Attribute Information
+1. age: age of the patient (years)
+2. anaemia: decrease of red blood cells or hemoglobin (boolean) (1-true,0-false)
+3. high blood pressure: if the patient has hypertension (boolean) (1-true,0-false)
+4. creatinine phosphokinase (CPK): level of the CPK enzyme in the blood (mcg/L)
+5. diabetes: if the patient has diabetes (boolean) (1-true,0-false)
+6. ejection fraction: percentage of blood leaving the heart at each contraction (percentage)
+7. platelets: platelets in the blood (kiloplatelets/mL)
+8. sex: woman or man (binary)
+9. serum creatinine: level of serum creatinine in the blood (mg/dL)
+10. serum sodium: level of serum sodium in the blood (mEq/L)
+11. smoking: if the patient smokes or not (boolean) (1-true,0-false)
+12. time: follow-up period (days)
+13. [target] death event: if the patient deceased during the follow-up period (boolean) (1-died,0-survived)
+
+## Data Manipulation and Visualisations
+Our first step is to import the data set and prepare it for further analysis. The data is available in the *heart_failure_clinical_records_dataset.csv* file, with comma separated values. There are a total of 6 categorical features with rest being continuous. Note that categorical variables are present as characters, so must be converted to factors for getting levels. There are no missing values present in the data. Our response variable is Death_event which indicates patient died (1) and patient survived (0) during the follow up period after patient was diagnosed with heart failure. There are few outliers present however are considered for the analysis. 
+```{r echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+heart_df = read.csv("heart_failure_clinical_records_dataset.csv", header = TRUE, as.is = FALSE)
+num_df = heart_df
+heart_df$anaemia = as.factor(heart_df$anaemia)
+heart_df$diabetes = as.factor(heart_df$diabetes)
+heart_df$high_blood_pressure = as.factor(heart_df$high_blood_pressure)
+heart_df$sex = as.factor(heart_df$sex)
+heart_df$smoking = as.factor(heart_df$smoking)
+heart_df$DEATH_EVENT = as.factor(heart_df$DEATH_EVENT)
+head(heart_df)
+```
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+summary_df = stat.desc(subset(heart_df, select = -c(anaemia,diabetes,high_blood_pressure,sex,smoking,DEATH_EVENT)))
+#knitr::kable(summary_df, align = "c", caption = "Statistical Summary Of Continuous Variables", digits=1)
+```
+We need to analyse how our target feature Death Event is affected by all the rest of the explanatory features. The Correlation Heatmap (Fig 1) gives us a general overview of how the features are correlated with one another. However note that since the categorical features were converted to numerical for correlation purpose, we will have to analyse the categorical feaures individually. However we can say death of patient during the follow up period is related to age of the patient, ejection fraction, level of serum creatinine in the blood and the follow up period. 
+```{r fig1, fig.align='center',optipng = '-o4',fig.width=8,fig.height=6, fig.cap="\\label{fig:fig1}Correlation Heatmap", echo=FALSE, warning=FALSE, message=FALSE}
+library(corrplot)
+corrplot(cor(num_df),addCoef.col = 1,
+    number.cex = 0.5,tl.cex = 0.9)
+```
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+df = subset(heart_df, select = c(anaemia,diabetes,high_blood_pressure,
+                                 sex,smoking,DEATH_EVENT))
+
+p1 = df %>% group_by(DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT))%>%
+  mutate(freq = paste((100 * round(patient_count / sum(patient_count), 4)),"%",sep = "")) %>%
+ggplot(aes(x = DEATH_EVENT, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(1) Paitents Death/Survival Count")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+
+df1 = df %>% group_by(anaemia,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+p2 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = anaemia, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(2) Paitent Survival w.r.t anaemia")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+
+df1 = df %>% group_by(diabetes,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+p3 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = diabetes, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(3) Paitent Survival w.r.t Diabetes")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+
+df1 = df %>% group_by(high_blood_pressure,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+p4 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = high_blood_pressure, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(4) Paitent Survival w.r.t High Blood Pressure")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+
+df1 = df %>% group_by(sex,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+p5 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = sex, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(5) Paitent Survival w.r.t Sex")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+
+df1 = df %>% group_by(smoking,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+p6 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = smoking, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(6) Paitent Survival w.r.t Smoking")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+```
+```{r fig2, fig.align='center',optipng = '-o4',fig.width=10,fig.height=9, fig.cap="\\label{fig:fig2}Patients Survival/Death variations w.r.t the categorical features", echo=FALSE, warning=FALSE, message=FALSE}
+# grid.arrange(arrangeGrob( P1,P1, ncol=1, nrow=2))
+do.call("grid.arrange", c(list(p1,p2,p3,p4,p5,p6), ncol = 2)) 
+```
+As we can see from the above figure (Fig 2), of the total patients, 32% didn't survive during the follow up period. Out of the total who didn't survive, 15% were suffering with anaemia, while 13% of patients had diabetes. Out of the total, 10% who died were smokers. Also 65% of the total patients were male and out of the total, patients who didn't survive constituted of more male than female. Let us see how age of a patient also affect the death event.
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+p21 = ggplot(heart_df, aes(x=diabetes, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(3) Patient Age vs Diabetes")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+
+p22 = ggplot(heart_df, aes(x=anaemia, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(4) Patient Age vs Anaemia")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+
+p23 = ggplot(heart_df, aes(x=high_blood_pressure, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(5) Patient Age vs High Blood Pressure")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+
+p24 = ggplot(heart_df, aes(x=smoking, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(6) Patient Age vs Smoking")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+
+p25 = ggplot(heart_df, aes(x=sex, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(7) Patient Age vs Sex")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+
+dd = heart_df %>%
+  group_by(DEATH_EVENT) %>%
+  summarise(averageAge = mean(age))
+
+p26 = ggplot(data=dd, aes(x = DEATH_EVENT, y = averageAge, fill=DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge(), show.legend = FALSE)+
+theme_bw()+
+  ggtitle("(8) Average Age of patients")+coord_flip()
+
+p27 = ggplot(heart_df, aes(x=age, color=DEATH_EVENT, fill=DEATH_EVENT)) +
+geom_histogram(position="dodge", alpha=0.1)+xlim(40,95)+
+  scale_x_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))+
+scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+theme_classic()+
+  ggtitle("(1) Age distributions of patients")
+
+df = subset(heart_df, select = -c(anaemia,diabetes,high_blood_pressure,
+                                 sex,smoking,platelets,serum_sodium))
+
+p28 = ggplot(data=heart_df, aes(x = age, y = time))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(2)Survival over Time vs age")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+```
+
+```{r fig3, fig.align='center',optipng = '-o4',fig.width=10,fig.height=15, fig.cap="\\label{fig:fig3}Patients Survival/Death variations w.r.t the categorical features associated with pateints age along with age vs time.", echo=FALSE, warning=FALSE, message=FALSE}
+#do.call("grid.arrange", c(list(p21,p22,p23,p24,p25), ncol = 2)) 
+grid.arrange(arrangeGrob( p27,p28, ncol=2, nrow=1),arrangeGrob( p21,p22,p23,p24,p25,p26, ncol=2, nrow=3))
+```
+As observed from above figure (Fig 3), majority of patients who died, fall between age group of 50-75 with an average age of above 60. Age along with the other categorical feature play an important role in determining survival factor of a patient. For example person with a heart failure, above 60 years old, who is a smoker or has anemia or is diabetic is likely to die where as a patient below age 60 who is a smoker or diabetic is likely to survive. But these visual observations on their own can't give us a better sense in to estimating what can affect the survival of a patient.
+
+Since we know the time feature i.e. the follow on period after patient is diagnosed with heart failure, we can use Kaplan-Meier estimator [@43] which is a survival analysis technique through which we can estimate if an individual in a population can survive beyond a given time. It is often used to evaluate treatment effectiveness or disease risks over time. Let us estimate this based on each category to find if there is sufficient difference between the survival probabilities for each level of each category.
+
+## Survival Analysis
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+s1 = survfit2(Surv(time, DEATH_EVENT) ~ diabetes, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(1) SA Diabetic (1) and Non Diabetic (0)")
+
+s2 = survfit2(Surv(time, DEATH_EVENT) ~ anaemia, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(2) SA Anemic (1) and Non Anemic (0)")
+
+s3 = survfit2(Surv(time, DEATH_EVENT) ~ high_blood_pressure, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(3) SA High Blood Pressure (1) and Low BP (0)")
+
+s4 = survfit2(Surv(time, DEATH_EVENT) ~ smoking, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(3) SA Smoker (1) and Non Smoker (0)")
+
+s5 = survfit2(Surv(time, DEATH_EVENT) ~ sex, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(3) SA Male (1) and Female (0)")
+```
+```{r fig4, fig.align='center',optipng = '-o4',fig.width=10,fig.height=13, fig.cap="\\label{fig:fig4}Surval Analysis (SA) of Patients over time based on each categorical feature", echo=FALSE, warning=FALSE, message=FALSE}
+#do.call("grid.arrange", c(list(p21,p22,p23,p24,p25), ncol = 2)) 
+grid.arrange(arrangeGrob( s1,s2,s3,s4,s5, ncol=2, nrow=3))
+```
+As observed from above figure (Fig 4), the survival rate over time curves appear relatively similar for Diabetics, Smoker and Sex category levels/factors hence we can deem them to be not significantly affecting the survival rate. However the survival curves appear to be different for each category level for High blood pressure and anaemic feature. It appears that patients with high blood pressure or anemic patients have low survival probability. We can also perform additional statistical tests to confirm these findings.
+
+We use Cox regression model [@43] which will allow us to analyse effect of multiple features or combined effect of several features (quantify an effect size for a single variable, or include more than one variable into a regression model to account for the effects of multiple variables) on survival outcome for further analysis. The following table shows the statistical summary obtained by using the cox-regression model. 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+t = coxph(Surv(time, DEATH_EVENT) ~ ., data = num_df) %>% 
+  tbl_regression(exp = TRUE)
+t
+```
+From the p-value (<0.05) itself, we can confirm some of the significant features which we analysed visually. Age, anaemia, high_blood_pressure are confirmed to be significant and can effect the survival of patient. Additional features like creatinine_phosphokinase, ejection_fraction and serum_creatinine also seems to be significant in predicting the survival of patient. 
+
+The following figure (Fig 5) show how creatinine_phosphokinase (CPK enzyme), ejection_fraction and serum_creatinine are associated with time and age. As we can see, the outliers affect the data for serum_creatinine and CPK hence observations seem to squeez at one end of the axis. Majority of patients died within fewer days of the follow up period mainly due to low level of the CPK enzyme in the blood which can thereby confirm its significance for survival. Similarly patients with high level of serum_creatinine (which can affect kidney function as well) appear to die in fewer days compared to thoes who survie.
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+df = subset(heart_df, select = -c(anaemia,diabetes,high_blood_pressure,
+                                 sex,smoking,platelets,serum_sodium))
+
+c1 = ggplot(data=df, aes(x = creatinine_phosphokinase, y = time))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(1) Time vs creatinine_phosphokinase")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+c2 = ggplot(data=df, aes(x = creatinine_phosphokinase, y = age))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(2) Age vs creatinine_phosphokinase")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+c3 = ggplot(data=df, aes(x = ejection_fraction, y = time))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(3) Time vs ejection_fraction")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+c4 = ggplot(data=df, aes(x = ejection_fraction, y = age))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(4) Age vs ejection_fraction")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+c5 = ggplot(data=df, aes(x = serum_creatinine, y = time))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(5) Time vs serum_creatinine")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+
+c6 = ggplot(data=df, aes(x = serum_creatinine, y = age))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(6) Age vs serum_creatinine")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+```
+```{r fig5, fig.align='center',optipng = '-o4',fig.width=10,fig.height=13, fig.cap="\\label{fig:fig5}Continuous features compared over Age and Time.", echo=FALSE, warning=FALSE, message=FALSE}
+grid.arrange(arrangeGrob( c1,c2,c3,c4,c5, c6, ncol=2, nrow=3))
+```
+
+# Conclusion
+After performing survival analysis and visually analysing the plots, we can confirm that Age, anaemia, high_blood_pressure, creatinine_phosphokinase, ejection_fraction and serum_creatinine can significantly affect the survival of a patient who was diagnosed with a heart failure. Using these features and model like the cox regression model, we can generate the hazard ratio, which is the risk or probability of occurrence of an event of interest i.e. the survival chance. However there are many other machine learning techniques available which can be used to predict the survival of patients with heart failure with better accuracy.  
+
+# Code Snippets
+```{r eval=F, echo=T}
+# Importing data
+heart_df = read.csv("heart_failure_clinical_records_dataset.csv", 
+                    header = TRUE, as.is = FALSE)
+# Correlation heatmap
+library(corrplot)
+corrplot(cor(heart_df),addCoef.col = 1,
+    number.cex = 0.5,tl.cex = 0.9)
+```
+```{r eval=F, echo=T}
+# finding patient count for high_blood_pressure grouped by DEATH_EVENT
+df1 = df %>% group_by(high_blood_pressure,DEATH_EVENT) %>%
+summarise(patient_count = length(DEATH_EVENT)) 
+s = sum(df1$patient_count)
+#finding percentage and plotting bargraph
+p4 = df1 %>%
+  mutate(freq = paste((100 * round(patient_count / s, 4)),"%",sep = "")) %>%
+ggplot(aes(x = high_blood_pressure, y=patient_count, fill = DEATH_EVENT)) +
+geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label = freq), vjust = -0.1, hjust=1)+
+theme_bw()+ ggtitle("(4) Paitent Survival w.r.t High Blood Pressure")+
+theme(legend.position='top', legend.justification='left',
+      legend.direction='horizontal')+coord_flip()
+```
+```{r eval=F, echo=T}
+# Plotting Patient Age vs Anaemia box plot w.r.t DEATH_EVENT
+p22 = ggplot(heart_df, aes(x=anaemia, y=age, fill=DEATH_EVENT)) + 
+    geom_boxplot(alpha=0.6, show.legend = TRUE)+
+ geom_jitter(alpha=0.2, size=0.3)+theme_bw()+ 
+  ggtitle("(4) Patient Age vs Anaemia")+
+  ylim(40,95)+
+  scale_y_continuous(breaks=seq(40, 95, 5), limits=c(40, 95))
+#...
+```
+```{r eval=F, echo=T}
+# Survival analysis using Kaplan Mier estimator and plotting
+s1 = survfit2(Surv(time, DEATH_EVENT) ~ diabetes, data = num_df) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Days",
+    y = "Survival probability"
+  )+ 
+  add_confidence_interval()+ggtitle("(1) SA Diabetic (1) and Non Diabetic (0)")
+#..
+```
+```{r eval=F, echo=T}
+# Cox regression model and table display
+# . indicated all the features
+t = coxph(Surv(time, DEATH_EVENT) ~ ., data = num_df) %>% 
+  tbl_regression(exp = TRUE)
+```
+```{r eval=F, echo=T}
+# Continuous explainatory variables variation with time
+c3 = ggplot(data=df, aes(x = ejection_fraction, y = time))+
+    geom_point(size = 0.5,aes(col = DEATH_EVENT))+
+  stat_smooth(method = "lm", col = "yellow", size=0.5) +
+  ggtitle("(3) Time vs ejection_fraction")+
+    theme_bw()+
+  theme(legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal')
+#..
+```
+\newpage
+# References
